@@ -1,60 +1,61 @@
-import { Booking } from '@prisma/client';
 import { prisma } from '@/config';
 
-type CreateParams = Omit<Booking, 'id' | 'createdAt' | 'updatedAt'>;
-type UpdateParams = Omit<Booking, 'createdAt' | 'updatedAt'>;
 
-async function create({ roomId, userId }: CreateParams): Promise<Booking> {
+async function getBookingByUserId(userId: number) {
+    return prisma.booking.findFirst({
+      where: {
+          userId
+      },
+      include: {
+        Room: true
+      }
+    });
+  }
+
+  async function getBookingById(userId: number, bookingId: number) {
+    return prisma.booking.findFirst({
+      where: {
+        id: bookingId,
+        userId,
+      },
+      include: {
+        Room: true
+      }
+    });
+  }
+
+async function createBooking(userId: number, roomId: number) {
   return prisma.booking.create({
-    data: {
-      roomId,
-      userId,
-    },
+    data:{
+        userId,
+        roomId
+    }
   });
 }
 
-async function findByRoomId(roomId: number) {
-  return prisma.booking.findMany({
-    where: {
-      roomId,
-    },
-    include: {
-      Room: true,
-    },
-  });
+async function editBooking(bookingId: number, roomId: number){
+    return prisma.booking.update({
+        where: {id: bookingId},
+        data: {
+            roomId
+        }
+    })
 }
 
-async function findByUserId(userId: number) {
-  return prisma.booking.findFirst({
-    where: {
-      userId,
-    },
-    include: {
-      Room: true,
-    },
-  });
-}
-
-async function upsertBooking({ id, roomId, userId }: UpdateParams) {
-  return prisma.booking.upsert({
-    where: {
-      id,
-    },
-    create: {
-      roomId,
-      userId,
-    },
-    update: {
-      roomId,
-    },
-  });
+async function countBookingsByRoom(roomId: number){
+    return prisma.booking.count({
+        where: {
+           roomId 
+        }
+    })
 }
 
 const bookingRepository = {
-  create,
-  findByRoomId,
-  findByUserId,
-  upsertBooking,
+  getBookingById,
+  getBookingByUserId,
+  createBooking,
+  editBooking,
+  countBookingsByRoom,
 };
 
 export default bookingRepository;

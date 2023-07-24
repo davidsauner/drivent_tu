@@ -1,67 +1,59 @@
-import { notFoundError } from '@/errors';
-import { badRequestError } from '@/errors/bad-request-error';
-import { cannotBookingError } from '@/errors/cannot-booking-error';
-import bookingRepository from '@/repositories/booking-repository';
-import enrollmentRepository from '@/repositories/enrollment-repository';
-import roomRepository from '@/repositories/room-repository';
-import ticketsRepository from '@/repositories/tickets-repository';
+import { forbiddenError, notFoundError } from '@/errors';
+import bookingRepository from '../../repositories/booking-repository';
+import hotelRepository from '../../repositories/hotel-repository';
+import ticketsRepository from '../../repositories/tickets-repository';
+import enrollmentRepository from '../../repositories/enrollment-repository';
 
-async function checkEnrollmentTicket(userId: number) {
-  const enrollment = await enrollmentRepository.findWithAddressByUserId(userId);
-  if (!enrollment) throw cannotBookingError();
-
-  const ticket = await ticketsRepository.findTicketByEnrollmentId(enrollment.id);
-
-  if (!ticket || ticket.status === 'RESERVED' || ticket.TicketType.isRemote || !ticket.TicketType.includesHotel) {
-    throw cannotBookingError();
-  }
-}
-
-async function checkValidBooking(roomId: number) {
-  const room = await roomRepository.findById(roomId);
-  const bookings = await bookingRepository.findByRoomId(roomId);
-
-  if (!room) throw notFoundError();
-  if (room.capacity <= bookings.length) throw cannotBookingError();
-}
 
 async function getBooking(userId: number) {
-  const booking = await bookingRepository.findByUserId(userId);
-  if (!booking) throw notFoundError();
+    const booking = await bookingRepository.getBookingByUserId(userId);
+    if(!booking) throw notFoundError();
 
-  return booking;
+    const result = {
+        "id": booking.id,
+        "Room": booking.Room
+    }
+    return result;  
 }
 
-async function bookingRoomById(userId: number, roomId: number) {
-  if (!roomId) throw badRequestError();
+async function createBooking(userId: number, roomId: number) {
+    const enrollment = await enrollmentRepository.findWithAddressByUserId(userId);
+    if (!enrollment) throw notFoundError();
 
-  await checkEnrollmentTicket(userId);
-  await checkValidBooking(roomId);
+    const ticket = await ticketsRepository.findTicketByEnrollmentId(enrollment.id);
+    if (!ticket) throw notFoundError();
 
-  return bookingRepository.create({ roomId, userId });
+    if(ticket.status !== 'PAID' || ticket.TicketType.isRemote === true || ticket.TicketType.includesHotel === false) throw forbiddenError();
+    
+    const room = await hotelRepository.findRoomById(roomId);
+    if(!room) throw notFoundError();
+
+    const roomBookings = await bookingRepository.countBookingsByRoom(roomId);
+    if(roomBookings >= room.capacity) throw forbiddenError();
+
+    const booking =  await bookingRepository.createBooking(userId, roomId);
+
+    return booking.id;
 }
 
-async function changeBookingRoomById(userId: number, roomId: number) {
-  if (!roomId) throw badRequestError();
+async function editBooking(userId: number, roomId: number, bookingId: number) {
 
-  await checkValidBooking(roomId);
-  const booking = await bookingRepository.findByUserId(userId);
+    const booking = await bookingRepository.getBookingById(userId, bookingId);
+    if(!booking) throw forbiddenError();
 
-  if (!booking || booking.userId !== userId) throw cannotBookingError();
+    const room = await hotelRepository.findRoomById(roomId);
+    if(!room) throw notFoundError();
 
-  return bookingRepository.upsertBooking({
-    id: booking.id,
-    roomId,
-    userId,
-  });
+    const roomBookings = await bookingRepository.countBookingsByRoom(roomId);
+    if(roomBookings >= room.capacity) throw forbiddenError();
+
+    const newBooking = await bookingRepository.editBooking(booking.id, roomId);
+
+    return newBooking.id; 
 }
 
-const bookingService = {
-  bookingRoomById,
+export default {
   getBooking,
-  changeBookingRoomById,
-  checkEnrollmentTicket,
-  checkValidBooking,
+  createBooking,
+  editBooking
 };
-
-export default bookingService;
